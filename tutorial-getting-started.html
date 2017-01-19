@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Tutorial: Getting Started</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Tutorial: Getting Started</h1>
+
+    <section>
+
+<header>
+    
+
+    <h2>Getting Started</h2>
+</header>
+
+<article>
+    <p>Welcome!</p>
+<p>This guide will get you from completely clueless about all things ES6, to a veritable expert in the load testing field.</p>
+<p>Or at least slightly more clued in than when you started.</p>
+<p>Your mileage may vary.</p>
+<h2>Before we start...</h2><p>There's something very important you need to understand about load testing. Web servers, generally speaking, have a limit to how many concurrent connections it can handle. Handling a lot of connections at the same time typically makes responses slower and slower, until at some point the server starts to drop requests to cope with the load.</p>
+<p>k6 is a tool to measure the performance of your own servers, or others' servers, <strong>with proper permission</strong>. It's <strong>not cool</strong> to run load tests against servers that are not your own without asking first. That's a very good way to make a sysadmin somewhere rather grumpy, and grumpy sysadmins ban people.</p>
+<p>tl;dr: <strong>Thou shalt not point load generators at things that are not thine own, lest thy incur the wrath of <code>iptables -A INPUT -s $IP -j DROP</code>.</strong></p>
+<h2>The anatomy of a script</h2><p>A test script is a javascript file. But not just any javascript file, an ES6 module that exports (at minimum) a single function:</p>
+<pre class="prettyprint source lang-es6"><code>export default function() {
+    // do something here
+}</code></pre><p>Think of this as your <code>main()</code> function in most other languages. Now, you might ask: &quot;why do I need to do this, can't I just write my code outside of this function, like how JS normally works?&quot;, which is a perfectly valid question.</p>
+<p>The answer lies in how k6 loads code. Your script is actually run in two phases:</p>
+<ol>
+<li><p>The setup phase. This is run once as the script is being loaded.<br>In this phase, <code>import</code> and <code>export</code> statements are processed, but it's not run in a &quot;VU context&quot;, which means APIs that need a VU (HTTP requests, etc) are not available.</p>
+</li>
+<li><p>The execution phase. This is when the <code>default</code> function is called on each VU iteration.<br>The only thing you may not do in this phase is load other modules that weren't imported during the setup phase.</p>
+</li>
+</ol>
+<p>The reason for this is simply: performance.</p>
+<p>If you have 5000 VUs all using the same code, it's obviously much more efficient to parse and compile the script once than to do the exact same work 5000 times.</p>
+<p>But it's not just because compilation takes time: 5000 VUs all trying to load script files at the same time would <a href="https://en.wikipedia.org/wiki/Thundering_herd_problem">place a tremendous strain</a> on both CPU and disk IO throughput, skewing metrics towards the start of the test. By loading all code upfront and completely eliminating disk access at runtime, we can prepare 5000 identical copies of the JS environment, and make VU execution deterministic.</p>
+<h2>Making HTTP requests</h2><p>The most basic thing you'll probably want to do is make HTTP requests. Fortunately, we have <a href="module-k6_http.html">an entire module</a> dedicated to that.</p>
+<pre class="prettyprint source lang-es6"><code>import http from &quot;k6/http&quot;;
+
+export default function() {
+    http.get(&quot;http://test.loadimpact.com/&quot;);
+}</code></pre><p>If you open up the web UI with this test running, you'll see that not only is it sending requests, it's reporting a number of metrics:</p>
+<ul>
+<li><p><strong>http_reqs</strong> - counter<br>Total number of HTTP requests.</p>
+</li>
+<li><p><strong>http_req_duration</strong> - min/max/avg/med<br>Total duration of each request, this is the sum of the other metrics + time spent reading the response body.</p>
+</li>
+<li><p><strong>http_req_blocked</strong> - min/max/avg/med<br>Time spent waiting to acquire a socket; this should be close to 0, if it starts rising, it's likely that you're overtaxing your machine.</p>
+</li>
+<li><p><strong>http_req_looking_up</strong> - min/max/avg/med<br>Time spent doing DNS lookups. (DNS records are cached, don't worry.)</p>
+</li>
+<li><p><strong>http_req_connecting</strong> - min/max/avg/med<br>Time spent connecting to the remote host. Connections will be reused if possible.</p>
+</li>
+<li><p><strong>http_req_sending</strong> - min/max/avg/med<br>Time spent sending a request.</p>
+</li>
+<li><p><strong>http_req_waiting</strong> - min/max/avg/med<br>Time between sending the request and the remote host sending a response.</p>
+</li>
+<li><p><strong>http_req_receiving</strong> - min/max/avg/med<br>Time spent receiving a response.</p>
+</li>
+</ul>
+<p>While the built-in web dashboard will only display aggregates of all data points, if you output data to InfluxDB or LoadImpact, you'll be able to filter and group the data on various dimensions (eg. URL, response code, etc). See the tutorial: influxdb.</p>
+<h2>Tests</h2><p>Using HTTP requests and varying the number of VUs, you can measure how your servers perform under load. But being able to perform under load isn't much good if your site starts misbehaving - you may be serving errors under higher load, for all you know, and the response times looking fine won't do you much good then.</p>
+<p>So let's add some testing to our script.</p>
+<pre class="prettyprint source lang-es6"><code>import { check } from &quot;k6&quot;;
+import http from &quot;k6/http&quot;;
+
+export default function() {
+    check(http.get(&quot;http://test.loadimpact.com/&quot;), {
+        &quot;status is 200&quot;: (res) => res.status === 200,
+    });
+}</code></pre><p>The <code>check()</code> function takes a value, and any number of dictionaries of <code>{ name: fn }</code>, where <code>fn</code> is a function that (optionally) takes a single argument - the value being tested - and returns a truthy value if the test passed. All HTTP requests return a <a href="module-k6_http.Response.html">module:k6/http.Response</a>, which among other things contains the response <code>status</code> and <code>body</code>.</p>
+<p>The web UI and will report counters for passes and failures, but note that checks are not assertions - a failed check will not throw an error, and the script will continue regardless.</p>
+<h2>Groups</h2><p>So far, all we've tested is a single URL. But most sites have a lot more than one page, and APIs typically have more than one endpoint.</p>
+<p>You could simply write a bunch of <code>http.get()</code> in a sequence, along with checks... but the reporting would get messy rather quickly - you couldn't tell which checks were for which request. This is when <code>group()</code> comes in handy.</p>
+<pre class="prettyprint source lang-es6"><code>import { check, group } from &quot;k6&quot;;
+import http from &quot;k6/http&quot;;
+
+// You can reuse commonly used tests like this.
+let commonTests = {
+    &quot;status is 200&quot;: (res) => res.status === 200,
+};
+
+export default function() {
+    group(&quot;front page&quot;, function() {
+        test(http.get(&quot;http://test.loadimpact.com/&quot;), commonTests);
+    });
+
+    group(&quot;pi digits&quot;, function() {
+        test(http.get(&quot;http://test.loadimpact.com/pi.php?decimals=2&quot;), {
+            &quot;pi is 3.14&quot;: (res) => res.body === &quot;3.14&quot;,
+        }, commonTests);
+    });
+}</code></pre><h2>Parsing HTML</h2><p>So we heard there exist web services that serve HTML. People call them &quot;web sites&quot;. Validating the behavior of these &quot;web sites&quot; can be tricky, because they are by nature made to be human-readable, rather than machine-readable.</p>
+<p>A naive approach would be to use regular expressions to try to process their content, but... <a href="http://stackoverflow.com/a/1732454/386580">let's not go there</a>. Please. We've been there, and it was naught but misery, bugs and false positives.</p>
+<p>So we made the <a href="module-k6_html.html">k6/html</a> module for this very task, closely mimicking the good ol' <a href="https://jquery.com/">jQuery</a> API.</p>
+<pre class="prettyprint source lang-es6"><code>import { check } from &quot;k6&quot;;
+import http from &quot;k6/http&quot;;
+
+export default function() {
+    let correctTitle = &quot;Welcome to the LoadImpact.com demo site!&quot;;
+    check(http.get(&quot;http://test.loadimpact.com/&quot;), {
+        &quot;status is 200&quot;: (res) => res.status === 200,
+        &quot;greeting is correct&quot;: (res) => res.html().find('h2').text() === correctTitle,
+    });
+}</code></pre>
+</article>
+
+</section>
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-k6.html">k6</a></li><li><a href="module-k6_html.html">k6/html</a></li><li><a href="module-k6_http.html">k6/http</a></li></ul><h3>Classes</h3><ul><li><a href="module-k6_html.Selection.html">Selection</a></li><li><a href="module-k6_http.Response.html">Response</a></li></ul><h3>Tutorials</h3><ul><li><a href="tutorial-getting-started.html">Getting Started</a></li><li><a href="tutorial-metrics-management.html">k6 Metrics Management</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Wed Jan 18 2017 20:34:08 GMT-0800 (PST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: k6/http.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: k6/http.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @module k6/http
+ */
+import { parseHTML } from "k6/html";
+
+export class Response {
+	/**
+	 * Represents an HTTP response.
+	 * @memberOf module:k6/http
+	 */
+	constructor(data) {
+		Object.assign(this, data);
+	}
+
+	json() {
+		if (!this._json) {
+			this._json = JSON.parse(this.body);
+		}
+		return this._json;
+	}
+
+	html(sel) {
+		if (!this._html) {
+			this._html = parseHTML(this.body);
+		}
+		if (sel) {
+			return this._html.find(sel);
+		}
+		return this._html;
+	}
+}
+
+/**
+ * Makes an HTTP request.
+ * @param  {string} method      HTTP Method (eg. "GET")
+ * @param  {string} url         Request URL (eg. "http://example.com/")
+ * @param  {string|Object} body Request body (query for GET/HEAD); objects will be query encoded.
+ * @param  {Object} params      Additional parameters.
+ * @return {module:k6/http.Response}
+ */
+export function request(method, url, body, params = {}) {
+	method = method.toUpperCase();
+	if (body) {
+		if (typeof body === "object") {
+			let formstring = "";
+			for (let key in body) {
+				if (formstring !== "") {
+					formstring += "&amp;";
+				}
+				formstring += key + "=" + encodeURIComponent(body[key]);
+			}
+			body = formstring;
+		}
+		if (method === "GET" || method === "HEAD") {
+			url += (url.includes("?") ? "&amp;" : "?") + body;
+			body = "";
+		}
+	}
+	return new Response(__jsapi__.HTTPRequest(method, url, body, JSON.stringify(params)));
+};
+
+/**
+ * Makes a GET request.
+ * @see    module:k6/http.request
+ * @param  {string} url         Request URL (eg. "http://example.com/")
+ * @param  {string|Object} body Request body (query for GET/HEAD); objects will be query encoded.
+ * @param  {Object} params      Additional parameters.
+ * @return {module:k6/http.Response}
+ */
+export function get(url, body, params) {
+	return request("GET", url, body, params);
+};
+
+/**
+ * Makes a POST request.
+ * @see    module:k6/http.request
+ * @param  {string} url         Request URL (eg. "http://example.com/")
+ * @param  {string|Object} body Request body (query for GET/HEAD); objects will be query encoded.
+ * @param  {Object} params      Additional parameters.
+ * @return {module:k6/http.Response}
+ */
+export function post(url, body, params) {
+	return request("POST", url, body, params);
+};
+
+/**
+ * Makes a PUT request.
+ * @see    module:k6/http.request
+ * @param  {string} url         Request URL (eg. "http://example.com/")
+ * @param  {string|Object} body Request body (query for GET/HEAD); objects will be query encoded.
+ * @param  {Object} params      Additional parameters.
+ * @return {module:k6/http.Response}
+ */
+export function put(url, body, params) {
+	return request("PUT", url, body, params);
+};
+
+/**
+ * Makes a DELETE request.
+ * @see    module:k6/http.request
+ * @param  {string} url         Request URL (eg. "http://example.com/")
+ * @param  {string|Object} body Request body (query for GET/HEAD); objects will be query encoded.
+ * @param  {Object} params      Additional parameters.
+ * @return {module:k6/http.Response}
+ */
+export function del(url, body, params) {
+	return request("DELETE", url, body, params);
+};
+
+/**
+ * Makes a PATCH request.
+ * @see    module:k6/http.request
+ * @param  {string} url         Request URL (eg. "http://example.com/")
+ * @param  {string|Object} body Request body (query for GET/HEAD); objects will be query encoded.
+ * @param  {Object} params      Additional parameters.
+ * @return {module:k6/http.Response}
+ */
+export function patch(url, body, params) {
+	return request("PATCH", url, body, params);
+};
+
+export default {
+	Response: Response,
+	request: request,
+	get: get,
+	post: post,
+	put: put,
+	del: del,
+	patch: patch,
+};
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-k6.html">k6</a></li><li><a href="module-k6_html.html">k6/html</a></li><li><a href="module-k6_http.html">k6/http</a></li></ul><h3>Classes</h3><ul><li><a href="module-k6_html.Selection.html">Selection</a></li><li><a href="module-k6_http.Response.html">Response</a></li></ul><h3>Tutorials</h3><ul><li><a href="tutorial-getting-started.html">Getting Started</a></li><li><a href="tutorial-metrics-management.html">k6 Metrics Management</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Wed Jan 18 2017 20:34:08 GMT-0800 (PST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

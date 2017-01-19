@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Tutorial: k6 Metrics Management</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Tutorial: k6 Metrics Management</h1>
+
+    <section>
+
+<header>
+    
+
+    <h2>k6 Metrics Management</h2>
+</header>
+
+<article>
+    <p>#k6 Metrics Management#</p>
+<p>This section covers the important aspect of metrics management in k6 - built-in implicit structures and custom explicit features.</p>
+<p>##Per-request metrics##</p>
+<pre class="prettyprint source lang-es6"><code>var res = http.get(“http://httpbin.org” (http://httpbin.xn--org-9o0a/));
+console.log(“Response time was “ + String(res.timings.duration) + “ ms”);</code></pre><p>In the above snippet, <code>res</code> is an HTTP response object containing:</p>
+<ul>
+<li><code>res.body</code> (<code>string</code> containing the HTTP response body)</li>
+<li><code>res.headers</code> (<code>dictionary</code> containing header-name/header-value pairs)</li>
+<li><code>res.status</code> (<code>integer</code> contaning HTTP response code received from server)</li>
+<li><code>res.timings</code> (<code>dictionary</code> containing HTTP timing information for the request)<ul>
+<li><code>res.timings.blocked</code> (<code>float</code> containing time (ms) spent blocked before initiating request)</li>
+<li><code>res.timings.looking_up</code> (<code>float</code> containing time (ms) spent looking up host name in DNS)</li>
+<li><code>res.timings.connecting</code> (<code>float</code> containing time (ms) spent setting up TCP connection to host)</li>
+<li><code>res.timings.sending</code> (<code>float</code> containing time (ms) spent sending request)</li>
+<li><code>res.timings.waiting</code> (<code>float</code> containing time (ms) spent waiting for server response (a.k.a. TTFB))</li>
+<li><code>res.timings.receiving</code> (<code>float</code> containing time (ms) spent receiving response data)</li>
+<li><code>res.timings.duration</code> (<code>float</code> containing total time (ms) for request, excluding <em>blocked</em> time)</li>
+</ul>
+</li>
+</ul>
+<p>##Custom metrics##
+Custom metrics are reported at the end of a load test, and can also be used with thresholds to provide pass/fail functionality for a load test, like this:</p>
+<pre class="prettyprint source lang-es6"><code>export let options = {                                                     
+   thresholds: {                                                           
+      request_duration: [&quot;avg&lt;100&quot;],                                       
+   }                                                                       
+};                                                                         
+
+var myTrend = new Trend(“request_duration”);                               
+
+export default function() {                                                
+   var r = http.get(&quot;https://httpbin.org&quot;);                                
+   myTrend.add(r.timings.duration);                                        
+};</code></pre><p>The above code will:</p>
+<ul>
+<li>create a Trend metric named “request_duration” and referred to in the code using the variable name myTrend</li>
+<li>define a threshold for the Trend metric. This threshold says that the load test should fail if the average value of the Trend metric goes below 100. This means that if at any time during the load test, the currently computed average of all sample values added to myTrend is less than 100, then the whole load test will be marked as failed.</li>
+<li>create a default function that will be executed repeatedly by all VUs in the load test. This function makes an HTTP request and adds the HTTP duration (request time - response.timings.duration) to the Trend metric.</li>
+</ul>
+<p>For a combined functional and load test, the code can look like this:</p>
+<pre class="prettyprint source lang-es6"><code>export let options = {                                                     
+   thresholds: {                                                           
+      request_duration: [&quot;avg&lt;100&quot;],                                       
+   }                                                                       
+};                                                                         
+
+var myTrend = new Trend(“request_duration”);                               
+
+export default function() {                                                
+   var r = http.get(&quot;https://httpbin.org&quot;);                                
+   myTrend.add(r.timings.duration);                                        
+   check(r, {                                                              
+      &quot;status is 200&quot;: (r) => r.status === 200,                            
+      &quot;body size 1234 bytes&quot;: (r) => r.body.length === 1234                
+   });                                                                     
+};</code></pre><p>The above code can be run both as a load test or as a functional test. Some things worth thinking about when running a multi-functional/combined test case:</p>
+<ul>
+<li><strong>Preventing functest check()s from causing load test false positives</strong>
+  In the load test use case you <em>may</em> want to “tune down” the sensitivity of the check()s so a single check failure will not fail the whole load test. This can be done using the —acceptance (-a) command-line option that allows you to specify what percentage of check()s may fail without the whole load test being marked as a fail.</li>
+<li><strong>Preventing load test thresholds from causing functest false positives</strong>
+  <em>Can we do this, currently?  I.e. in the example above the “average” response time for a single transaction may be high due to DNS lookup times or whatnot, causing the functest to always fail because of its load test threshold.</em></li>
+</ul>
+<p>###Available custom metrics###</p>
+<p>####Counter <em>(cumulative metric)</em>####</p>
+<pre class="prettyprint source lang-es6"><code>var myCounter = new Counter(“my_counter”);
+myCounter.add(1);
+myCounter.add(2);</code></pre><p>The above code will make k6 print <code>my_counter: 3</code> at the end of the test. There is currently no way of accessing the value of any custom metric from within Javascript. Note also that counters that have value zero (<code>0</code>) at the end of a test are a special case - they will <strong>NOT</strong> be printed to the stdout summary.</p>
+<p>####Gauge <em>(keep the latest value only)</em>####</p>
+<pre class="prettyprint source lang-es6"><code>var myGauge = new Gauge(“my_gauge”);
+myGauge.add(1);
+myGauge.add(2);</code></pre><p>The above code will make k6 print <code>my_gauge: 2</code> at the end of the test. As with the Counter metric above, a Gauge with value zero (<code>0</code>) will <strong>NOT</strong> be printed to the stdout summary at the end of the test.</p>
+<p>####Trend <em>(collect trend statistics (min/max/avg/med) for a series of values)</em>####</p>
+<pre class="prettyprint source lang-es6"><code>var myTrend = new Trend(“my_trend”);
+myTrend.add(1);
+myTrend.add(2);</code></pre><p>The above code will make k6 print <code>my_trend: min=1, max=2, avg=1.5, med=1.5</code></p>
+<p>####Rate <em>(keeps track of percentage of values in a series that are non-zero)</em>####</p>
+<pre class="prettyprint source lang-es6"><code>var myRate = new Rate(“my_rate”);
+myRate.add(true);
+myRate.add(false);
+myRate.add(1);
+myRate.add(0);</code></pre><p>The above code will make k6 print <code>my_rate: 50.00%</code> at the end of the test.</p>
+<p>###Notes###</p>
+<ul>
+<li><p>custom metrics are only collected from VU threads at the end of a VU iteration, which means that for long-running scripts you may not see any custom metrics until a while into the test.</p>
+</li>
+<li><p>thresholds are only checked every 2 seconds, which both means you incur up to a 2-second delay before a load test is failed once failure criteria has been reached. It also means that there is a built-in 2-second grace period at the start of a load test where e.g. the above <code>rate&gt;0.75</code> threshold would not cause the test to fail, despite the initial value for the metric being <code>0</code> (zero).</p>
+</li>
+</ul>
+<p>##Assertions for functional testing##
+Checks are used for functional testing:</p>
+<pre class="prettyprint source lang-es6"><code>var res = http.get(“http://example.com” (http://example.xn--com-9o0a/));
+check(res, { “status is 200”: (res) => res.status === 200 });  // returns false if check condition fails</code></pre><p>Multiple checks can be included in a single check() call:</p>
+<pre class="prettyprint source lang-es6"><code>var res = http.get(“http://example.com” (http://example.xn--com-9o0a/));
+check(res, { 
+   “status is 200”: (res) => res.status === 200 },
+   &quot;content size = 1234 bytes&quot;: (res) => res.body.length === 1234)
+});</code></pre><p>The percentage of successful checks are printed to stdout after the end of the load test. By default, a failed <code>check()</code> will result in the whole load test being marked as failed.</p>
+<p>##Load test failure thresholds##
+There are three “normal” ways a load test can fail currently:</p>
+<ol>
+<li><p>Upon failure of a <code>check()</code> the whole load test is marked as failed by default. This behaviour will be possible to override, see section above.</p>
+</li>
+<li><p><code>taint()</code> allows a VU to mark a whole load test as failed:</p>
+<pre class="prettyprint source lang-es6"><code>if (something_happened) {
+ taint(); // marks test as failed, but does not exit
+}</code></pre></li>
+<li><p>Upon an <code>options.thresholds</code> condition failing:</p>
+<pre class="prettyprint source lang-es6"><code>export let options = {                                      
+ thresholds: {                                            
+     my_duration: [&quot;avg&lt;100&quot;]                              
+ }                                                        
+};</code></pre><p>Thresholds operate on any metrics (in this case a custom metric called <code>my_duration</code>) and allow you to specify one or more strings containing JS code that will be “evaluated” to verify if the threshold is OK (is a &quot;pass&quot;) or not.</p>
+</li>
+</ol>
+</article>
+
+</section>
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-k6.html">k6</a></li><li><a href="module-k6_html.html">k6/html</a></li><li><a href="module-k6_http.html">k6/http</a></li></ul><h3>Classes</h3><ul><li><a href="module-k6_html.Selection.html">Selection</a></li><li><a href="module-k6_http.Response.html">Response</a></li></ul><h3>Tutorials</h3><ul><li><a href="tutorial-getting-started.html">Getting Started</a></li><li><a href="tutorial-metrics-management.html">k6 Metrics Management</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Wed Jan 18 2017 20:34:08 GMT-0800 (PST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
