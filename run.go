@@ -31,6 +31,7 @@ import (
 	"github.com/loadimpact/k6/lib"
 	"github.com/loadimpact/k6/simple"
 	"github.com/loadimpact/k6/stats"
+	"github.com/loadimpact/k6/stats/cloud"
 	"github.com/loadimpact/k6/stats/influxdb"
 	"github.com/loadimpact/k6/stats/json"
 	"github.com/loadimpact/k6/ui"
@@ -208,6 +209,8 @@ func makeCollector(s string) (stats.Collector, error) {
 		return influxdb.New(p)
 	case "json":
 		return json.New(p)
+	case "cloud":
+		return cloud.New(p)
 	default:
 		return nil, errors.New("Unknown output type: " + t)
 	}
